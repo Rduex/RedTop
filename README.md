@@ -75,6 +75,14 @@ node tools/probe-offline.js     # 断网验收：确认单机版真的零网络
 
 ---
 
+### 部署到 Cloudflare Pages（可选，纯静态）
+
+想给玩家一个**不依赖服务器**的地址时，把单机版丢到 Cloudflare Pages 即可：
+构建命令 `node tools/build-standalone.js`，输出目录 `dist-ghost`。
+完整步骤见 [DEPLOY-CLOUDFLARE.md](DEPLOY-CLOUDFLARE.md)。
+
+---
+
 ## 二、它做了什么
 
 ### 排行榜
@@ -246,7 +254,9 @@ fx-online/
 │   └── index.html         联网版产物（随仓库提交，构建失败时也能托管）
 │
 ├── dist-ghost/
-│   └── index.html         单机版产物（单文件 / 零网络 / 双击即玩，给玩家的交付物）
+│   ├── index.html         单机版产物（单文件 / 零网络 / 双击即玩，给玩家的交付物）
+│   ├── _headers           Cloudflare Pages / Netlify 的缓存与安全头（构建时生成）
+│   └── _redirects         任意路径都回 index.html（构建时生成）
 │
 ├── test/
 │   ├── store-close.js     退出落盘语义（无改动不写盘）

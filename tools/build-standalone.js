@@ -189,6 +189,40 @@ function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(OUT_FILE, out, 'utf8');
 
+  /* ---------- 3) 顺带产出静态托管平台需要的两个配置文件 ----------
+   *
+   * 为什么要在这里生成而不是手写进仓库：
+   *   Cloudflare Pages / Netlify 这类静态托管只认输出目录里的 `_headers` 与
+   *   `_redirects`。手写的话，一旦产物重建、目录被清空，这两个文件就跟着没了，
+   *   而且没人会注意到——表现是"缓存策略突然变了"。所以让构建负责生成。
+   */
+
+  /* _headers：单文件游戏的缓存与安全策略。
+   * ★ 关键取舍：HTML **不能**长缓存。游戏更新靠的就是这个文件的字节变化，
+   *   一旦设成 max-age=31536000，玩家会一直跑旧版本且无法自愈。
+   *   但"每次回源校验"不等于"每次重传"——配合 ETag，命中就是 304，几乎零成本。 */
+  const headersTxt = [
+    '# 由 tools/build-standalone.js 生成，请勿手工修改',
+    '',
+    '/*',
+    '  Cache-Control: public, max-age=0, must-revalidate',
+    '  X-Content-Type-Options: nosniff',
+    '  Referrer-Policy: no-referrer',
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(OUT_DIR, '_headers'), headersTxt, 'utf8');
+
+  /* _redirects：游戏是**单个 HTML、没有前端路由**，所以任何路径都交给 index.html。
+   * 这样玩家把地址栏里的路径改乱了（比如 /abc）也不会看到 404，
+   * 而是照常打开游戏——对"发个链接给朋友"的场景很重要。 */
+  const redirectsTxt = [
+    '# 由 tools/build-standalone.js 生成，请勿手工修改',
+    '# 单文件游戏：所有路径都返回 index.html（200 而非 302，地址栏不变）',
+    '/*    /index.html    200',
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(OUT_DIR, '_redirects'), redirectsTxt, 'utf8');
+
   const kb = (Buffer.byteLength(out, 'utf8') / 1024).toFixed(1);
   console.log('');
   console.log('  ✅ 已生成单机版：' + OUT_FILE);
@@ -201,7 +235,13 @@ function main() {
   console.log('       ✅ 追加保证金（手动填金额 · 实时预览）');
   console.log('       ⛔ 云存档 / 联机榜（需要服务器，单机版不含）');
   console.log('');
+  console.log('     顺带生成 _headers / _redirects（Cloudflare Pages / Netlify 直接可用）');
   console.log('     游戏源文件：' + gameSrc + ' ' + describeSource(gameSrc));
+  console.log('');
+  console.log('     部署到 Cloudflare Pages（方案 A）：');
+  console.log('       构建命令： node tools/build-standalone.js');
+  console.log('       输出目录： dist-ghost');
+  console.log('       （或构建命令留空，直接用仓库里已提交的 dist-ghost/）');
   console.log('');
 }
 
