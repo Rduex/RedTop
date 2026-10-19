@@ -1,0 +1,43 @@
+{
+  "name": "fx-online",
+  "version": "2.1.0",
+  "private": true,
+  "description": "FX 战士久留美 · 联网版（Node 后端 + 排行榜 + 云存档 + 幽灵对战 + 追加保证金）",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "postinstall": "node tools/build-online.js",
+    "build": "node tools/build-online.js",
+    "build:offline": "node tools/build-ghost.js",
+
+    "test": "node tools/build-online.js && node test/store-close.js && node test/margin-ui.js && node test/online-build.js && node test/storage-check.js && node test/secret-impact.js && node test/theme.js && node test/layout.js && node test/desktop-layout.js && node test/mock-ghost.js && node test/ghost-e2e.js && node test/ghost-integration.js",
+    "test:store": "node test/store-close.js",
+    "test:margin": "node test/margin-ui.js",
+    "test:online": "node test/online-build.js",
+    "test:storage": "node test/storage-check.js",
+    "test:secret": "node test/secret-impact.js",
+    "test:theme": "node test/theme.js",
+    "test:layout": "node test/layout.js",
+    "test:desktop": "node test/desktop-layout.js",
+    "test:mock": "node test/mock-ghost.js",
+    "test:ghost": "node test/ghost-e2e.js",
+    "test:integration": "node test/ghost-integration.js",
+
+    "_comment_api": "接口/端到端套件：会自己起一个真实服务端，约 1 分钟",
+    "test:api": "node test/api.js",
+    "test:account": "node test/account.js",
+    "test:smoke": "node test/smoke.js",
+    "test:e2e": "node test/e2e.js",
+
+    "_comment_probe": "浏览器探针（需要本机 Chrome）",
+    "probe:margin": "node tools/probe-margin.js",
+    "probe:live": "node tools/probe-live.js",
+    "probe:layout": "node tools/probe-layout.js",
+    "probe:hidden": "node tools/probe-hidden.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

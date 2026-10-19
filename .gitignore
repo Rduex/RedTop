@@ -1,0 +1,20 @@
+# 运行期数据：玩家账号与成绩，绝对不要提交到仓库
+data/
+
+# 临时文件
+*.tmp
+*.log
+*.bak
+node_modules/
+
+# 可重建的离线单文件产物：不进仓库（需要时 node tools/build-ghost.js 现场生成）
+dist-ghost/
+
+# 探针抓取的线上页面副本
+.live-tmp.html
+
+# 说明：public/index.html 是构建产物，但这里**有意不忽略**它。
+# 原因：云平台（Railway/Render）部署时如果构建步骤没跑起来（或平台不支持
+# 自定义构建命令），服务端仍然需要一个现成的 index.html 才能托管页面 ——
+# 把它一起提交，等于给部署留了一条"即便构建失败也能跑"的退路。
+# 重新构建： node tools/build-online.js

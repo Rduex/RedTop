@@ -1,0 +1,24 @@
+# 换行符规范化。
+#
+# ★ 为什么必须显式声明：
+#   Windows 上 git 默认会把文本文件的换行符转成 CRLF（core.autocrlf 的行为）。
+#   start.sh 一旦被提交成 CRLF，到了 Linux 容器里就会因为
+#   "bad interpreter: /usr/bin/env bash^M" 直接跑不起来。
+#   Cloud 平台（Railway/Render）用的正是 Linux 容器，所以这条不能省。
+#
+# 规则：Shell 脚本强制 LF；其余文本用 LF 入库、按平台自然处理。
+
+* text=auto eol=lf
+
+# Shell 脚本必须是 LF（Linux 上唯一的正确选择）
+*.sh text eol=lf
+
+# Windows 批处理必须是 CRLF（反过来，LF 的 .bat 在 cmd 里会出错）
+*.bat text eol=crlf
+
+# 二进制文件不要做任何换行符转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.woff2 binary

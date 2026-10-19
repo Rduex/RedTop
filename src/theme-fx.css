@@ -1,0 +1,2867 @@
+/*
+ * FX 主题 · 交易终端 + 社交信息流
+ * =====================================================================
+ * 一套覆盖层样式，构建时注入到游戏页面之后。
+ * **不改游戏源码一个字节** —— 全部通过选择器覆盖 + CSS 变量重定义实现。
+ *
+ * 设计依据
+ * --------
+ * ① FX 主体 / K 线图  → 对标真实交易终端（Bloomberg / TradingView / 日本 SBI・楽天証券）
+ *    - 深色画布 + 网格，让蜡烛图成为视觉主体
+ *    - 涨绿跌红（东亚习惯：红涨绿跌也支持，通过 --up/--down 切换）
+ *    - 等宽数字字体（tabular-nums），价格列不跳动
+ *    - 克制的霓虹仅在关键数据上出现（最后价、当前价线）
+ *
+ * ② 智萌子融资 → 对标境外金融 App（Revolut / Wise / Cash App 的信用额度卡）
+ *    - 卡片化、大数字、进度条
+ *    - 危险操作（借款）用琥珀色，安全操作（还款）用中性色
+ *
+ * ③ 情报市场 → 对标海外社交媒体（X / Threads / Reddit 的信息流）
+ *    - 每张情报卡 = 一条 post：头像 + 名称 + 时间 + 正文 + 操作栏
+ *    - 圆角卡片、细分隔线、hover 反馈
+ *    - 真假标注做成"认证徽章 / 社区备注"的视觉语言
+ *
+ * 移动端
+ * -----
+ * - 全部用 clamp() 与 minmax() 做流体尺寸，不写死 px 断点
+ * - 数字列用 grid + minmax(0,1fr)，长文本强制 ellipsis，杜绝溢出
+ * - 触控目标 ≥ 40px
+ * =====================================================================
+ */
+
+/* ============================ 设计令牌 ============================ */
+
+:root {
+  /* ---- 底层色：不用纯黑（OLED 拖影），用带蓝调的极深灰 ---- */
+  --fx-bg: #0a0e17;
+  --fx-bg-2: #0e131f;
+  --fx-surface: #121926;
+  --fx-surface-2: #182234;
+  --fx-surface-3: #1f2b40;
+
+  /* ---- 描边：全部用半透明，避免死板的实线灰 ---- */
+  --fx-line: rgba(148, 163, 184, .14);
+  --fx-line-strong: rgba(148, 163, 184, .26);
+
+  /* ---- 文字层级 ---- */
+  --fx-text: #e8edf5;
+  --fx-text-2: #9aa8bd;
+  --fx-text-3: #64748b;
+
+  /* ---- 语义色 ----
+   *
+   * ★ 涨跌配色：默认采用**东亚习惯（红涨绿跌）**。
+   *
+   *   为什么改：这个游戏的中文玩家占绝大多数，而中国大陆、日本、韩国、
+   *   台湾的行情软件（同花顺、东方财富、SBI証券、Kiwoom）都是红涨绿跌。
+   *   绿涨红跌是欧美惯例（TradingView 默认、Yahoo Finance）。
+   *   对一个中文 FX 游戏来说，"涨是绿的"会让人下意识看反。
+   *
+   *   想切回国际惯例：把下面两组变量的值对调即可（或给 html 加 data-market="intl"）。
+   *   具体做法见文件末尾的 [data-market="intl"] 覆盖块。
+   */
+  --fx-up: #ef4444;                          /* 涨 = 红 */
+  --fx-up-dim: rgba(239, 68, 68, .14);
+  --fx-down: #22c55e;                        /* 跌 = 绿 */
+  --fx-down-dim: rgba(34, 197, 94, .14);
+
+  /* ---- 品牌与强调 ---- */
+  --fx-accent: #4f8cff;
+  --fx-accent-dim: rgba(79, 140, 255, .14);
+  --fx-gold: #e0b44c;
+  --fx-gold-dim: rgba(224, 180, 76, .14);
+  --fx-purple: #9d7cff;
+  --fx-purple-dim: rgba(157, 124, 255, .14);
+
+  /* ---- 图表专用 ---- */
+  --fx-chart-bg: #0b1220;
+  --fx-chart-grid: rgba(148, 163, 184, .085);
+  --fx-chart-grid-strong: rgba(148, 163, 184, .16);
+  --fx-chart-text: #7d8ca3;
+  --fx-chart-crosshair: rgba(226, 232, 240, .34);
+
+  /* ---- 圆角与间距 ---- */
+  --fx-r-sm: 8px;
+  --fx-r-md: 12px;
+  --fx-r-lg: 16px;
+  --fx-r-xl: 20px;
+
+  /* ---- 阴影：深色界面靠"发光"而不是"投影" ---- */
+  --fx-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .28);
+  --fx-glow-up: 0 0 0 1px rgba(34, 197, 94, .3), 0 0 18px rgba(34, 197, 94, .16);
+  --fx-glow-down: 0 0 0 1px rgba(239, 68, 68, .3), 0 0 18px rgba(239, 68, 68, .16);
+  --fx-glow-accent: 0 0 0 1px rgba(79, 140, 255, .3), 0 0 18px rgba(79, 140, 255, .16);
+
+  /* ---- 字体 ----
+   * 数字用等宽表格数字（tabular-nums），否则价格每秒跳动会让整列左右抖。
+   * 中文用系统字体栈，保证各平台都不缺字。 */
+  --fx-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --fx-mono: "SF Mono", "JetBrains Mono", "Roboto Mono", ui-monospace,
+    Menlo, Consolas, monospace;
+}
+
+/* ============================ 全局基底 ============================ */
+
+/* 覆盖游戏原有的浅色主题变量，让所有未显式改写的组件自动跟随 */
+:root {
+  --bg: var(--fx-bg);
+  --card: var(--fx-surface);
+  --line: var(--fx-line);
+  --text: var(--fx-text);
+  --text-2: var(--fx-text-2);
+  --muted: var(--fx-text-3);
+  --green: var(--fx-up);
+  --green-dark: #16a34a;
+  --green-soft: var(--fx-up-dim);
+  --red: var(--fx-down);
+  --red-dark: #dc2626;
+  --red-soft: var(--fx-down-dim);
+  --pink-soft: var(--fx-purple-dim);
+  --pink-text: var(--fx-purple);
+  --chart-bg: var(--fx-chart-bg);
+  --chart-grid: var(--fx-chart-grid);
+  --chart-text: var(--fx-chart-text);
+  --radius: var(--fx-r-lg);
+}
+
+html, body {
+  background: var(--fx-bg) !important;
+  color: var(--fx-text) !important;
+  font-family: var(--fx-font) !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 背景加一层极淡的径向光晕，避免大面积纯色显得死板 */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(60vw 40vh at 12% -8%, rgba(79, 140, 255, .10), transparent 60%),
+    radial-gradient(50vw 34vh at 92% 4%, rgba(157, 124, 255, .07), transparent 62%);
+}
+
+/* 原来的 FX 水印在深色下太脏，关掉 */
+body::before { display: none !important; }
+
+.phone {
+  position: relative;
+  z-index: 1;
+  max-width: 820px !important;
+  padding: 12px 12px 32px !important;
+  gap: 12px;
+}
+
+/* 所有数字统一表格数字，防止跳动 */
+.phone b, .phone .num, .phone [id$="Owed"], .phone [id$="Cap"],
+.phone [id$="Avail"], .phone #equity, .phone #balance {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ============================ 顶栏 ============================ */
+
+.topbar {
+  border-bottom: 1px solid var(--fx-line) !important;
+  padding: 10px 2px 14px !important;
+  margin-bottom: 4px !important;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.avatar {
+  width: 44px !important;
+  height: 44px !important;
+  background: linear-gradient(135deg, #4f8cff, #9d7cff) !important;
+  box-shadow: 0 4px 16px rgba(79, 140, 255, .34) !important;
+  font-size: 15px !important;
+}
+
+.brand-title {
+  font-size: 18px !important;
+  letter-spacing: .2px;
+  background: linear-gradient(92deg, #e8edf5, #9db8e8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  /* 长标题不换行、超出省略：品牌区在窄屏上绝不能把顶栏撑出横向滚动 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  display: block;
+}
+
+/* 品牌区允许收缩，否则 flex 子项会撑破父容器 */
+.brand-text {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.brand {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.brand-sub {
+  font-size: 11px !important;
+  color: var(--fx-text-3) !important;
+  margin-top: 3px !important;
+}
+
+.brand-sub a { color: var(--fx-text-3) !important; }
+
+.topbar-actions {
+  gap: 7px !important;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* 顶栏按钮统一为终端风格胶囊 */
+.ghost-btn,
+.fxo-chip,
+.fxg-chip {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+  font-size: 11.5px !important;
+  padding: 7px 12px !important;
+  border-radius: 999px !important;
+  transition: background .16s, border-color .16s, color .16s, transform .12s !important;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ghost-btn:hover,
+.fxo-chip:hover,
+.fxg-chip:hover {
+  background: var(--fx-surface-3) !important;
+  border-color: var(--fx-line-strong) !important;
+  color: var(--fx-text) !important;
+}
+
+.ghost-btn:active { transform: scale(.97); }
+
+.ghost-btn.gold {
+  color: var(--fx-gold) !important;
+  border-color: rgba(224, 180, 76, .3) !important;
+  background: var(--fx-gold-dim) !important;
+}
+
+.fxg-chip.battle {
+  background: rgba(34, 197, 94, .16) !important;
+  border-color: rgba(34, 197, 94, .4) !important;
+  color: var(--fx-up) !important;
+}
+
+.chip-icon { font-size: 15px !important; opacity: .6 !important; }
+
+/* ============================ 卡片 ============================ */
+
+.card {
+  background: var(--fx-surface) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-lg) !important;
+  box-shadow: var(--fx-shadow) !important;
+  padding: 14px 15px !important;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 卡片顶部一条极细的高光，模拟玻璃边缘 */
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .14), transparent);
+  pointer-events: none;
+}
+
+.card-title {
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  color: var(--fx-text-2) !important;
+  letter-spacing: .3px;
+  margin-bottom: 11px !important;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+/* ============================ 账户卡 ============================ */
+
+.account-card {
+  background: linear-gradient(160deg, #14203a 0%, var(--fx-surface) 58%) !important;
+  border-color: rgba(79, 140, 255, .2) !important;
+}
+
+.account-card::after {
+  content: "";
+  position: absolute;
+  right: -40px; top: -60px;
+  width: 180px; height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(79, 140, 255, .16), transparent 66%);
+  pointer-events: none;
+}
+
+.acc-left { position: relative; z-index: 1; }
+
+.acc-head {
+  font-size: 11px !important;
+  color: var(--fx-text-3) !important;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+}
+
+#equity {
+  font-size: clamp(26px, 7vw, 34px) !important;
+  font-weight: 700 !important;
+  letter-spacing: -.5px;
+  line-height: 1.1;
+  background: linear-gradient(180deg, #fff, #b9c9e4);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+#equityDelta {
+  font-size: 12.5px !important;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  display: inline-block;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.acc-right {
+  text-align: right;
+  position: relative;
+  z-index: 1;
+}
+
+.acc-sub, .acc-right .m-label {
+  font-size: 11px !important;
+  color: var(--fx-text-3) !important;
+}
+
+#balance { font-size: 15px !important; font-weight: 600; }
+
+/* ============================ 行情头 ============================ */
+
+.market-card { padding: 0 !important; overflow: hidden; }
+
+.market-head {
+  padding: 13px 15px 11px !important;
+  border-bottom: 1px solid var(--fx-line) !important;
+  margin: 0 !important;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.pair-row { margin: 0 !important; gap: 9px; flex-wrap: wrap; }
+
+/* 货币对下拉：终端风格 */
+#pairSelect, .market-card select {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text) !important;
+  border-radius: var(--fx-r-sm) !important;
+  padding: 7px 10px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  font-family: var(--fx-mono) !important;
+  letter-spacing: .3px;
+}
+
+.market-price {
+  font-family: var(--fx-mono) !important;
+  font-size: clamp(19px, 5.2vw, 23px) !important;
+  font-weight: 700 !important;
+  letter-spacing: -.4px;
+  color: var(--fx-text) !important;
+}
+
+.market-price.up { color: var(--fx-up) !important; text-shadow: 0 0 16px rgba(34, 197, 94, .3); }
+.market-price.down { color: var(--fx-down) !important; text-shadow: 0 0 16px rgba(239, 68, 68, .3); }
+
+.market-chg {
+  font-family: var(--fx-mono) !important;
+  font-size: 11.5px !important;
+  padding: 3px 8px !important;
+  border-radius: 6px !important;
+}
+
+.market-chg.up { background: var(--fx-up-dim) !important; color: var(--fx-up) !important; }
+.market-chg.down { background: var(--fx-down-dim) !important; color: var(--fx-down) !important; }
+
+.market-mood {
+  font-size: 10.5px !important;
+  padding: 3px 9px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--fx-line) !important;
+  background: var(--fx-surface-2) !important;
+  color: var(--fx-text-3) !important;
+}
+
+.market-mood.up {
+  background: var(--fx-up-dim) !important;
+  border-color: rgba(34, 197, 94, .28) !important;
+  color: var(--fx-up) !important;
+}
+
+.market-mood.down {
+  background: var(--fx-down-dim) !important;
+  border-color: rgba(239, 68, 68, .28) !important;
+  color: var(--fx-down) !important;
+}
+
+/* ============================ K 线图 ============================ */
+
+.chart-wrap {
+  background: var(--fx-chart-bg) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  position: relative;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+/* 图表在深色卡片里做一点点内发光，突出"屏幕"质感 */
+.chart-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  box-shadow: inset 0 0 60px rgba(0, 0, 0, .45);
+  border-radius: 0;
+}
+
+.chart-wrap canvas { display: block; width: 100%; }
+
+/* 图表内快捷交易键：改成终端下单条 */
+.chart-quick {
+  background: linear-gradient(180deg, transparent, rgba(10, 14, 23, .9)) !important;
+  border: 0 !important;
+  gap: 7px !important;
+  padding: 8px 10px !important;
+}
+
+.chart-quick button {
+  min-height: 38px;
+  border-radius: var(--fx-r-sm) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  background: rgba(24, 34, 52, .92) !important;
+  color: var(--fx-text) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: transform .12s, background .16s !important;
+}
+
+.chart-quick button:active { transform: scale(.96); }
+
+.chart-quick button.long {
+  background: var(--fx-up) !important;
+  border-color: var(--fx-up) !important;
+  color: #04170c !important;
+  font-weight: 700 !important;
+}
+
+.chart-quick button.short {
+  background: var(--fx-down) !important;
+  border-color: var(--fx-down) !important;
+  color: #1a0505 !important;
+  font-weight: 700 !important;
+}
+
+.chart-quick button.close {
+  background: rgba(148, 163, 184, .16) !important;
+  color: var(--fx-text-2) !important;
+}
+
+.pause-badge {
+  background: rgba(224, 180, 76, .16) !important;
+  border: 1px solid rgba(224, 180, 76, .35) !important;
+  color: var(--fx-gold) !important;
+  font-size: 11px !important;
+  border-radius: 999px !important;
+  backdrop-filter: blur(6px);
+}
+
+.event-badge {
+  background: rgba(157, 124, 255, .16) !important;
+  border: 1px solid rgba(157, 124, 255, .35) !important;
+  color: var(--fx-purple) !important;
+  font-size: 11px !important;
+  border-radius: 999px !important;
+  backdrop-filter: blur(6px);
+}
+
+.chart-wrap.paused {
+  box-shadow: inset 0 0 0 1px rgba(224, 180, 76, .4), inset 0 0 60px rgba(0, 0, 0, .45) !important;
+}
+
+/* 快讯条 */
+.news {
+  background: var(--fx-surface-2) !important;
+  border-top: 1px solid var(--fx-line) !important;
+  font-size: 11.5px !important;
+  color: var(--fx-text-2) !important;
+  padding: 8px 14px !important;
+}
+
+.news-tag {
+  color: var(--fx-accent) !important;
+  border-bottom-color: rgba(79, 140, 255, .4) !important;
+  font-weight: 600;
+}
+
+.news-text.news-event { color: var(--fx-gold) !important; }
+.news:has(.news-event) .news-tag { color: var(--fx-gold) !important; border-bottom-color: rgba(224, 180, 76, .4) !important; }
+
+/* ============================ 下单区 ============================ */
+
+.order-card .m-label {
+  font-size: 10.5px !important;
+  color: var(--fx-text-3) !important;
+  letter-spacing: .3px;
+}
+
+/* 输入框 */
+input[type="text"], input[type="number"], .margin-input, #marginInput {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text) !important;
+  border-radius: var(--fx-r-sm) !important;
+  padding: 9px 11px !important;
+  font-family: var(--fx-mono) !important;
+  font-size: 14px !important;
+  font-variant-numeric: tabular-nums;
+  transition: border-color .16s, box-shadow .16s;
+}
+
+input[type="text"]:focus, input[type="number"]:focus, #marginInput:focus {
+  outline: none;
+  border-color: rgba(79, 140, 255, .55) !important;
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, .14) !important;
+}
+
+/* 杠杆滑杆 */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--fx-accent), var(--fx-purple)) !important;
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--fx-accent);
+  box-shadow: 0 2px 10px rgba(79, 140, 255, .5);
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid var(--fx-accent);
+  cursor: pointer;
+}
+
+/* 杠杆快捷档位 */
+.lev-presets button, #levPresets button {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+  border-radius: 7px !important;
+  font-size: 11px !important;
+  padding: 6px 9px !important;
+  min-height: 32px;
+  font-family: var(--fx-mono) !important;
+  transition: all .14s;
+}
+
+.lev-presets button:hover, #levPresets button:hover {
+  border-color: var(--fx-line-strong) !important;
+  color: var(--fx-text) !important;
+}
+
+.lev-presets button.active, #levPresets button.active {
+  background: var(--fx-accent-dim) !important;
+  border-color: rgba(79, 140, 255, .55) !important;
+  color: var(--fx-accent) !important;
+}
+
+.lev-presets button.warn, #levPresets button.warn {
+  border-color: rgba(224, 180, 76, .3) !important;
+  color: var(--fx-gold) !important;
+}
+
+/* 三项指标 */
+.order-metrics, .metric-row {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-md) !important;
+  padding: 10px 12px !important;
+}
+
+.metric-row .m-label { color: var(--fx-text-3) !important; }
+.metric-row b, .metric-row .metric-val { color: var(--fx-text) !important; font-family: var(--fx-mono) !important; }
+
+/* 做多 / 做空 主按钮 —— 界面上最重要的两个操作 */
+.btn-long, .btn-short, #longBtn, #shortBtn {
+  border-radius: var(--fx-r-md) !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  min-height: 50px;
+  letter-spacing: .5px;
+  border: 0 !important;
+  transition: transform .12s, box-shadow .18s, filter .16s !important;
+}
+
+.btn-long, #longBtn {
+  background: linear-gradient(180deg, #2ee06a, #16a34a) !important;
+  color: #03160a !important;
+  box-shadow: 0 4px 18px rgba(34, 197, 94, .3) !important;
+}
+
+.btn-short, #shortBtn {
+  background: linear-gradient(180deg, #ff5f5f, #dc2626) !important;
+  color: #1a0404 !important;
+  box-shadow: 0 4px 18px rgba(239, 68, 68, .3) !important;
+}
+
+.btn-long:hover, #longBtn:hover { filter: brightness(1.08); box-shadow: 0 6px 24px rgba(34, 197, 94, .42) !important; }
+.btn-short:hover, #shortBtn:hover { filter: brightness(1.08); box-shadow: 0 6px 24px rgba(239, 68, 68, .42) !important; }
+.btn-long:active, #longBtn:active,
+.btn-short:active, #shortBtn:active { transform: scale(.98); }
+
+/* ============================ 持仓 ============================ */
+
+.position-item, .pos-item {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-md) !important;
+  padding: 11px 12px !important;
+  margin-bottom: 8px !important;
+  position: relative;
+}
+
+/* 左缘用方向色条标识多空 */
+.position-item::before, .pos-item::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 10px; bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--fx-accent);
+}
+
+.position-item.long::before, .pos-item.long::before { background: var(--fx-up); }
+.position-item.short::before, .pos-item.short::before { background: var(--fx-down); }
+
+.pos-side, .position-side {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 2px 7px !important;
+  border-radius: 5px !important;
+  letter-spacing: .4px;
+}
+
+.pos-pnl, .position-pnl {
+  font-family: var(--fx-mono) !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+}
+
+.pos-pnl.up, .position-pnl.up { color: var(--fx-up) !important; }
+.pos-pnl.down, .position-pnl.down { color: var(--fx-down) !important; }
+
+/* 平仓按钮 */
+.pos-close, .position-close, .close-btn {
+  background: rgba(148, 163, 184, .14) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+  border-radius: 7px !important;
+  font-size: 11.5px !important;
+  padding: 6px 11px !important;
+  min-height: 32px;
+  transition: all .14s;
+}
+
+.pos-close:hover, .position-close:hover, .close-btn:hover {
+  background: rgba(239, 68, 68, .16) !important;
+  border-color: rgba(239, 68, 68, .4) !important;
+  color: var(--fx-down) !important;
+}
+
+/* ============================ 交易日记 ============================ */
+
+.log-list {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fx-surface-3) transparent;
+}
+
+.log-list::-webkit-scrollbar { width: 5px; }
+.log-list::-webkit-scrollbar-thumb { background: var(--fx-surface-3); border-radius: 999px; }
+.log-list::-webkit-scrollbar-track { background: transparent; }
+
+.log-item, .log-row {
+  font-size: 11.5px !important;
+  color: var(--fx-text-2) !important;
+  padding: 6px 2px !important;
+  border-bottom: 1px solid rgba(148, 163, 184, .06) !important;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.55;
+}
+
+.log-item:last-child, .log-row:last-child { border-bottom: 0 !important; }
+.log-time { color: var(--fx-text-3) !important; font-family: var(--fx-mono) !important; font-size: 10.5px !important; }
+
+/* ============================ 智萌子融资（金融 App 风格）============================ */
+
+/*
+ * 参考 Revolut / Wise / Cash App 的信用额度卡：
+ *  - 顶部是"额度条"，一眼看出还能用多少
+ *  - 三格关键数字，等宽对齐
+ *  - 操作按钮主次分明：借款是危险动作用琥珀，还款是中性
+ */
+.loan-card {
+  background:
+    linear-gradient(150deg, rgba(224, 180, 76, .09) 0%, transparent 42%),
+    var(--fx-surface) !important;
+  border-color: rgba(224, 180, 76, .22) !important;
+}
+
+.challenge-head {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px !important;
+}
+
+.challenge-title {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: var(--fx-text) !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.challenge-state {
+  font-size: 10.5px !important;
+  color: var(--fx-gold) !important;
+  background: var(--fx-gold-dim) !important;
+  border: 1px solid rgba(224, 180, 76, .26) !important;
+  border-radius: 999px !important;
+  padding: 3px 9px !important;
+  white-space: nowrap;
+  font-family: var(--fx-mono) !important;
+}
+
+/* 三格数字：用 grid 保证等宽，不会因为位数不同而错位 */
+.loan-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  margin-bottom: 12px !important;
+}
+
+.loan-cell {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-md) !important;
+  padding: 10px 11px !important;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.loan-cell .m-label {
+  font-size: 10px !important;
+  color: var(--fx-text-3) !important;
+  letter-spacing: .2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.loan-cell b {
+  font-size: clamp(13px, 3.6vw, 15.5px) !important;
+  font-family: var(--fx-mono) !important;
+  font-weight: 700 !important;
+  color: var(--fx-text) !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 欠款为负（有钱欠着）时用琥珀提示 */
+.loan-cell.owed b { color: var(--fx-gold) !important; }
+
+.loan-actions {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  margin-bottom: 10px !important;
+}
+
+.loan-actions button {
+  min-height: 42px !important;
+  border-radius: var(--fx-r-sm) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  background: var(--fx-surface-2) !important;
+  color: var(--fx-text-2) !important;
+  padding: 8px 6px !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all .15s;
+}
+
+.loan-actions button:hover {
+  background: var(--fx-surface-3) !important;
+  color: var(--fx-text) !important;
+}
+
+/* 借款 = 危险动作 */
+#loan10Btn, #loanMaxBtn {
+  border-color: rgba(224, 180, 76, .3) !important;
+  color: var(--fx-gold) !important;
+}
+
+#loan10Btn:hover, #loanMaxBtn:hover {
+  background: var(--fx-gold-dim) !important;
+  border-color: rgba(224, 180, 76, .55) !important;
+}
+
+/* 还款 = 主动方的正向操作 */
+#loanRepayBtn {
+  background: rgba(34, 197, 94, .14) !important;
+  border-color: rgba(34, 197, 94, .35) !important;
+  color: var(--fx-up) !important;
+  font-weight: 700 !important;
+}
+
+#loanRepayBtn:hover { background: rgba(34, 197, 94, .24) !important; }
+
+.asset-foot {
+  font-size: 11px !important;
+  color: var(--fx-text-3) !important;
+  line-height: 1.6;
+  padding-top: 9px;
+  border-top: 1px solid var(--fx-line);
+}
+
+/* ============================ 情报市场（社交媒体 Feed 风格）============================ */
+
+/*
+ * 参考 X / Threads / Reddit 的信息流：
+ *  - 每条情报 = 一张 post 卡：左侧头像区 + 右侧正文 + 底部操作栏
+ *  - 真假用"认证徽章 / 社区备注"的视觉语言表达
+ *  - 圆角、细分隔线、hover 轻微提亮
+ */
+.intel-card {
+  background:
+    linear-gradient(150deg, rgba(157, 124, 255, .08) 0%, transparent 40%),
+    var(--fx-surface) !important;
+  border-color: rgba(157, 124, 255, .2) !important;
+}
+
+.intel-repu {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 7px !important;
+  margin: 12px 0 !important;
+}
+
+.intel-repu-cell {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-sm) !important;
+  padding: 9px 8px !important;
+  text-align: center;
+  min-width: 0;
+}
+
+.intel-repu-cell .m-label {
+  font-size: 9.5px !important;
+  color: var(--fx-text-3) !important;
+  display: block;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.intel-repu-cell b {
+  font-family: var(--fx-mono) !important;
+  font-size: 13px !important;
+  color: var(--fx-purple) !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+/* 页签：社媒的 tab 条 */
+.im-tabs {
+  display: flex !important;
+  gap: 6px !important;
+  border-bottom: 1px solid var(--fx-line) !important;
+  margin-bottom: 12px !important;
+  padding-bottom: 0 !important;
+}
+
+.im-tab {
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  color: var(--fx-text-3) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  padding: 9px 13px !important;
+  border-radius: 0 !important;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+  min-height: 40px;
+}
+
+.im-tab:hover { color: var(--fx-text-2) !important; }
+
+.im-tab.active {
+  color: var(--fx-purple) !important;
+  border-bottom-color: var(--fx-purple) !important;
+}
+
+.im-pane {
+  max-height: 42vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fx-surface-3) transparent;
+}
+
+.im-pane::-webkit-scrollbar { width: 5px; }
+.im-pane::-webkit-scrollbar-thumb { background: var(--fx-surface-3); border-radius: 999px; }
+
+/* ---- 情报条目 = 一条社交 post ---- */
+.intel-item {
+  display: grid !important;
+  grid-template-columns: 34px minmax(0, 1fr) !important;
+  gap: 10px !important;
+  padding: 12px 4px !important;
+  border-bottom: 1px solid rgba(148, 163, 184, .08) !important;
+  transition: background .15s;
+  border-radius: var(--fx-r-sm);
+}
+
+.intel-item:hover { background: rgba(148, 163, 184, .04); }
+.intel-item:last-child { border-bottom: 0 !important; }
+
+/* 左侧圆形头像 */
+.intel-avatar {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 50% !important;
+  background: linear-gradient(135deg, #9d7cff, #4f8cff) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex: none;
+  box-shadow: 0 2px 8px rgba(157, 124, 255, .3);
+}
+
+/* 右侧正文区 */
+.intel-main { min-width: 0; }
+
+.intel-head {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.intel-name {
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  color: var(--fx-text) !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+/* 认证徽章：真情报 = 蓝标，假情报 = 灰标 */
+.intel-verified {
+  font-size: 10px;
+  color: var(--fx-accent);
+  flex: none;
+}
+
+.intel-meta {
+  font-size: 10.5px !important;
+  color: var(--fx-text-3) !important;
+  font-family: var(--fx-mono) !important;
+  white-space: nowrap;
+}
+
+.intel-body {
+  font-size: 12px !important;
+  color: var(--fx-text-2) !important;
+  line-height: 1.6;
+  margin-bottom: 7px;
+  word-break: break-word;
+}
+
+/* 底部操作栏：模仿社媒的 action row */
+.intel-foot-row {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.intel-stat {
+  font-size: 10.5px !important;
+  color: var(--fx-text-3) !important;
+  font-family: var(--fx-mono) !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.intel-buy-btn {
+  margin-left: auto;
+  background: var(--fx-purple-dim) !important;
+  border: 1px solid rgba(157, 124, 255, .38) !important;
+  color: var(--fx-purple) !important;
+  border-radius: 999px !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  padding: 6px 14px !important;
+  min-height: 32px;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+
+.intel-buy-btn:hover { background: rgba(157, 124, 255, .26) !important; }
+.intel-buy-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* 情报列表里的"真假结论"标记 —— 做成社媒的"社区备注"样式 */
+.intel-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.intel-verdict.true {
+  background: var(--fx-up-dim);
+  color: var(--fx-up);
+  border: 1px solid rgba(34, 197, 94, .28);
+}
+
+.intel-verdict.false {
+  background: rgba(148, 163, 184, .12);
+  color: var(--fx-text-3);
+  border: 1px solid var(--fx-line);
+}
+
+.intel-verdict.pending {
+  background: var(--fx-gold-dim);
+  color: var(--fx-gold);
+  border: 1px solid rgba(224, 180, 76, .28);
+}
+
+/* ============================ 弹窗 ============================ */
+
+.modal {
+  background: rgba(4, 7, 12, .72) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 16px !important;
+  /* ★ 必须显式约束高度。
+   *   游戏用的是 position:fixed + inset:0，理论高度就是视口高。
+   *   但它同时有 overflow-y:auto —— 当内部面板比视口高时，
+   *   如果没有 height 限制，某些浏览器会把 fixed 容器的高度撑到内容高，
+   *   结果整页文档被拉长（截图里弹窗下方出现大片空白就是这么来的）。
+   *   用 100dvh 兼容移动端动态地址栏。 */
+  height: 100vh;
+  height: 100dvh;
+  box-sizing: border-box;
+}
+
+.modal-panel {
+  background: var(--fx-surface) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  border-radius: var(--fx-r-xl) !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .6) !important;
+  /* 宽度用 min() 约束：桌面端不超 680px，小屏自动缩到视口内。
+   * 不用固定 width，否则 320px 宽的旧手机上会横向溢出。 */
+  width: min(680px, 94vw) !important;
+  /* 高度上限：给遮罩留出上下 8% 的呼吸空间 */
+  max-height: 88vh;
+  max-height: 88dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--fx-surface-3) transparent;
+}
+
+/* 宽版弹窗（资产市场/情报市场）在桌面端铺开，小屏仍受 94vw 约束 */
+.modal-panel.modal-wide {
+  width: min(760px, 94vw) !important;
+}
+
+.modal-panel::-webkit-scrollbar { width: 5px; }
+.modal-panel::-webkit-scrollbar-thumb { background: var(--fx-surface-3); border-radius: 999px; }
+
+.modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--fx-surface) !important;
+  border-bottom: 1px solid var(--fx-line) !important;
+  padding: 15px 17px 12px !important;
+  border-radius: var(--fx-r-xl) var(--fx-r-xl) 0 0;
+}
+
+.modal-head h2 {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: var(--fx-text) !important;
+  margin: 0;
+}
+
+.modal-close {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+  border-radius: 999px !important;
+  /* 触控目标不小于 36px：手指点得出，同时不抢标题的视觉重心 */
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  min-height: 36px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  padding: 0 !important;
+  flex: none;
+  transition: all .15s;
+}
+
+.modal-close:hover {
+  background: var(--fx-down-dim) !important;
+  color: var(--fx-down) !important;
+  border-color: rgba(239, 68, 68, .35) !important;
+}
+
+.modal-sub {
+  font-size: 11.5px !important;
+  color: var(--fx-text-3) !important;
+  line-height: 1.75;
+  padding: 12px 17px !important;
+  margin: 0 !important;
+}
+
+.modal-sub b { color: var(--fx-text-2) !important; }
+
+.modal-ok {
+  background: linear-gradient(180deg, #5b95ff, var(--fx-accent)) !important;
+  border: 0 !important;
+  color: #fff !important;
+  border-radius: var(--fx-r-md) !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+  padding: 13px !important;
+  min-height: 48px;
+  box-shadow: 0 4px 18px rgba(79, 140, 255, .3) !important;
+  transition: filter .15s, transform .12s;
+  width: 100%;
+}
+
+.modal-ok:hover { filter: brightness(1.1); }
+.modal-ok:active { transform: scale(.99); }
+
+.btn-ghost {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+  border-radius: var(--fx-r-sm) !important;
+  padding: 10px 14px !important;
+  font-size: 12.5px !important;
+  min-height: 42px;
+  transition: all .15s;
+}
+
+.btn-ghost:hover {
+  background: var(--fx-surface-3) !important;
+  color: var(--fx-text) !important;
+}
+
+/* 结算清单 */
+.cs-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  font-size: 12.5px;
+  border-bottom: 1px solid rgba(148, 163, 184, .07);
+  color: var(--fx-text-2);
+}
+
+.cs-row:last-child { border-bottom: 0; }
+.cs-row b { color: var(--fx-text) !important; font-family: var(--fx-mono) !important; font-variant-numeric: tabular-nums; text-align: right; }
+
+.cs-note {
+  font-size: 11.5px !important;
+  color: var(--fx-text-3) !important;
+  line-height: 1.7;
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--fx-surface-2);
+  border-radius: var(--fx-r-md);
+  border-left: 3px solid var(--fx-accent);
+}
+
+.cs-head {
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: var(--fx-text) !important;
+  margin-bottom: 10px;
+}
+
+/* ============================ 三选一卡牌 ============================ */
+
+.pick-card, .card-option {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  border-radius: var(--fx-r-md) !important;
+  transition: all .18s !important;
+}
+
+.pick-card:hover, .card-option:hover {
+  border-color: rgba(79, 140, 255, .5) !important;
+  background: var(--fx-surface-3) !important;
+  transform: translateY(-2px);
+}
+
+/* ============================ 资产市场 ============================ */
+
+.asset-item, .market-item {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-md) !important;
+  padding: 10px 12px !important;
+  margin-bottom: 7px !important;
+}
+
+.asset-name { color: var(--fx-text) !important; font-size: 12.5px !important; font-weight: 600; }
+.asset-price { font-family: var(--fx-mono) !important; font-variant-numeric: tabular-nums; }
+
+/* ============================ 移动端适配 ============================ */
+
+@media (max-width: 640px) {
+  .phone { padding: 10px 10px 28px !important; }
+
+  .topbar {
+    padding: 8px 2px 12px !important;
+  }
+
+  .brand-title { font-size: 16px !important; }
+  .brand-sub { font-size: 10px !important; }
+
+  /* 顶栏按钮在手机上会被挤到第二行，缩一点保证一行放得下两个 */
+  .ghost-btn, .fxo-chip, .fxg-chip {
+    font-size: 11px !important;
+    padding: 6px 10px !important;
+    min-height: 32px;
+  }
+
+  #equity { font-size: clamp(24px, 8vw, 30px) !important; }
+
+  .market-price { font-size: clamp(18px, 5.6vw, 21px) !important; }
+
+  /* 三格 → 保持三格但压字号，不换行（换行会让数字对不齐） */
+  .loan-grid { gap: 6px !important; }
+  .loan-cell { padding: 8px 8px !important; }
+  .loan-cell b { font-size: clamp(12px, 3.4vw, 14px) !important; }
+  .loan-cell .m-label { font-size: 9px !important; }
+
+  .loan-actions { gap: 6px !important; }
+  .loan-actions button { font-size: 11px !important; min-height: 40px !important; }
+
+  /* 四格 → 两列，避免文字挤成一团 */
+  .intel-repu { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+
+  .intel-item { grid-template-columns: 30px minmax(0, 1fr) !important; gap: 8px !important; }
+  .intel-avatar { width: 30px !important; height: 30px !important; font-size: 13px; }
+  .intel-name { font-size: 12px !important; max-width: 50%; }
+  .intel-body { font-size: 11.5px !important; }
+
+  .im-tab { font-size: 12px !important; padding: 8px 10px !important; }
+
+  .modal { padding: 0 !important; }
+  .modal-panel {
+    border-radius: 0 !important;
+    max-height: 100vh !important;
+    height: 100% !important;
+    border: 0 !important;
+  }
+  .modal-head { border-radius: 0 !important; }
+}
+
+/* 超窄屏（≤380px）：进一步压缩，保证不溢出 */
+@media (max-width: 380px) {
+  .brand-sub { display: none; }
+  .loan-actions button { font-size: 10px !important; padding: 7px 3px !important; }
+  .intel-repu-cell b { font-size: 12px !important; }
+  .chart-quick button { font-size: 11.5px !important; padding: 6px 9px !important; }
+}
+
+/* 矮屏（横屏手机） */
+@media (max-height: 620px) {
+  .modal-sub { max-height: 20vh; overflow-y: auto; }
+  .im-pane { max-height: 34vh; }
+}
+
+/* ============================ 无障碍与偏好 ============================ */
+
+/* 尊重系统的"减少动效"设置 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* 键盘焦点必须可见（深色背景下默认焦点环几乎看不见） */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--fx-accent) !important;
+  outline-offset: 2px !important;
+}
+
+/* 选中文字颜色 */
+::selection {
+  background: rgba(79, 140, 255, .32);
+  color: #fff;
+}
+
+/* ============================ 情报档位卡 = 社交 post 卡 ============================
+ * 游戏把每个情报档位渲染成 .im-lv（原有浅色卡片样式）。
+ * 这里不改 HTML，纯用 CSS 重构成"社交信息流里的一条 post"：
+ *   头像列 | 名称+时间+认证徽章 / 正文 / 指标 chips / 操作栏
+ * 网格布局让左侧头像与右侧内容严格对齐，手机上也不会错位。
+ */
+.im-lv {
+  display: grid !important;
+  grid-template-columns: 36px minmax(0, 1fr) !important;
+  gap: 10px !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(148, 163, 184, .08) !important;
+  border-radius: var(--fx-r-md) !important;
+  padding: 13px 6px !important;
+  margin: 0 !important;
+  position: relative;
+  transition: background .15s;
+}
+
+.im-lv:hover { background: rgba(148, 163, 184, .045) !important; }
+.im-lv:last-child { border-bottom: 0 !important; }
+
+/* 锁定的档位：整条降透明度，但不使用浅灰底（深色界面里会很脏） */
+.im-lv.locked { opacity: .5 !important; background: transparent !important; }
+
+/* 左侧头像：用 CSS 生成一个渐变圆，避免引入图片资源。
+ * ★ 对齐要点：头像必须与第一行标题在同一条基线上。
+ *   grid 的 align-items 默认 stretch，会把头像拉到整块高度，
+ *   看起来"浮在左边中间"。这里显式 align-self:start。 */
+.im-lv::before {
+  content: "🛰";
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #9d7cff, #4f8cff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  box-shadow: 0 2px 10px rgba(157, 124, 255, .32);
+  flex: none;
+}
+
+/* 整条用 start 对齐，避免子项被拉伸 */
+.im-lv {
+  align-items: start !important;
+}
+
+/* 标题行与头像顶部对齐 */
+.im-lv-top {
+  padding-top: 1px;
+  min-height: 34px;
+  align-items: center;
+}
+
+/* 所有直接子元素都排到第 2 列 */
+.im-lv > * { grid-column: 2; min-width: 0; }
+
+.im-lv-top {
+  display: flex !important;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 5px;
+}
+
+/* 档位徽章 = 社媒的"认证蓝标"位 */
+.im-lv-tier {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: .4px;
+  padding: 2px 8px !important;
+  border-radius: 999px !important;
+  background: var(--fx-purple-dim) !important;
+  color: var(--fx-purple) !important;
+  border: 1px solid rgba(157, 124, 255, .3) !important;
+  white-space: nowrap;
+}
+
+.im-lv-name {
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  color: var(--fx-text) !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+/* 价格右对齐，等宽数字 */
+.im-lv-price {
+  margin-left: auto !important;
+  font-family: var(--fx-mono) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: var(--fx-text) !important;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.im-lv-price.free { color: var(--fx-up) !important; }
+.im-lv-price.locked { color: var(--fx-text-3) !important; font-weight: 600 !important; }
+
+/* 正文 */
+.im-lv-desc {
+  font-size: 11.5px !important;
+  color: var(--fx-text-2) !important;
+  line-height: 1.65 !important;
+  margin: 0 0 8px !important;
+  word-break: break-word;
+}
+
+/* 指标 chips：社媒的"话题标签"感 */
+.im-lv-stats {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 5px !important;
+  margin-bottom: 9px !important;
+}
+
+.im-stat {
+  font-size: 10px !important;
+  font-family: var(--fx-mono) !important;
+  padding: 2px 7px !important;
+  border-radius: 999px !important;
+  background: rgba(148, 163, 184, .1) !important;
+  color: var(--fx-text-3) !important;
+  border: 1px solid var(--fx-line) !important;
+  white-space: nowrap;
+}
+
+/* 真情报概率用绿色，反向坑用红色 —— 语义化的"社区备注" */
+.im-stat.t { background: var(--fx-up-dim) !important; color: var(--fx-up) !important; border-color: rgba(34, 197, 94, .26) !important; }
+.im-stat.f { background: var(--fx-down-dim) !important; color: var(--fx-down) !important; border-color: rgba(239, 68, 68, .26) !important; }
+
+.im-lv-actions {
+  display: flex !important;
+  align-items: center;
+  gap: 7px !important;
+  flex-wrap: wrap;
+}
+
+.im-lv-actions select {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+  border-radius: 7px !important;
+  padding: 6px 8px !important;
+  font-size: 11px !important;
+  font-family: var(--fx-mono) !important;
+  min-height: 32px;
+  max-width: 140px;
+}
+
+.im-buy-btn {
+  margin-left: auto;
+  background: var(--fx-purple-dim) !important;
+  border: 1px solid rgba(157, 124, 255, .38) !important;
+  color: var(--fx-purple) !important;
+  border-radius: 999px !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  padding: 7px 15px !important;
+  min-height: 34px;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+  font-family: var(--fx-font) !important;
+}
+
+.im-buy-btn:hover:not(:disabled) {
+  background: rgba(157, 124, 255, .26) !important;
+  transform: scale(1.02);
+}
+
+.im-buy-btn:disabled { opacity: .4 !important; cursor: not-allowed; }
+
+/* "推向上涨"用绿色，"推向下跌"用红色 */
+.im-buy-btn[data-dir="1"] {
+  background: var(--fx-up-dim) !important;
+  border-color: rgba(34, 197, 94, .38) !important;
+  color: var(--fx-up) !important;
+}
+
+.im-buy-btn[data-dir="-1"] {
+  background: var(--fx-down-dim) !important;
+  border-color: rgba(239, 68, 68, .38) !important;
+  color: var(--fx-down) !important;
+}
+
+.im-note {
+  font-size: 10px !important;
+  color: var(--fx-text-3) !important;
+  font-style: italic;
+}
+
+/* 情报市场底部说明 */
+.market-foot {
+  font-size: 11px !important;
+  color: var(--fx-text-3) !important;
+  line-height: 1.65;
+  padding: 10px 17px 0 !important;
+}
+
+/* 已购情报列表（情报卡里最近 3 条） */
+.intel-log-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--fx-text-2);
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, .07);
+  flex-wrap: wrap;
+}
+
+.intel-log-item:last-child { border-bottom: 0; }
+
+/* ============================ 其余卡片的通用强化 ============================ */
+
+/* 挑战 / 成长 / 资产卡在深色下的统一处理 */
+.challenge-card, .growth-card, .asset-card {
+  background: var(--fx-surface) !important;
+  border-color: var(--fx-line) !important;
+}
+
+/* 里程碑进度条 */
+.mile-bar, .progress-bar, .bar {
+  background: rgba(148, 163, 184, .14) !important;
+  border-radius: 999px !important;
+  overflow: hidden;
+}
+
+.mile-fill, .progress-fill, .bar-fill {
+  background: linear-gradient(90deg, var(--fx-accent), var(--fx-purple)) !important;
+  border-radius: 999px !important;
+  transition: width .4s cubic-bezier(.16, 1, .3, 1);
+}
+
+/* 衣柜卡（久爸）用暖警示色 */
+.dad-card {
+  background: linear-gradient(150deg, rgba(239, 68, 68, .08), transparent 45%), var(--fx-surface) !important;
+  border-color: rgba(239, 68, 68, .25) !important;
+}
+
+/* 空状态 */
+.empty, .empty-state {
+  color: var(--fx-text-3) !important;
+  text-align: center;
+  padding: 22px 10px;
+  font-size: 12px;
+}
+
+/* 分隔线统一 */
+hr, .divider {
+  border: 0;
+  border-top: 1px solid var(--fx-line);
+  margin: 12px 0;
+}
+
+/* ============================ 持仓卡 / 日记卡 专门强化 ============================ */
+
+.positions-card,
+.log-card {
+  background: var(--fx-surface) !important;
+  border-color: var(--fx-line) !important;
+}
+
+.card-title .count,
+.card-title .badge,
+#posCount {
+  font-family: var(--fx-mono) !important;
+  font-size: 10.5px !important;
+  padding: 2px 8px !important;
+  border-radius: 999px !important;
+  background: var(--fx-accent-dim) !important;
+  color: var(--fx-accent) !important;
+  border: 1px solid rgba(79, 140, 255, .28) !important;
+  font-weight: 600 !important;
+}
+
+/* 全部平仓按钮（危险操作） */
+#closeAllBtn,
+.all-close-btn {
+  background: rgba(239, 68, 68, .12) !important;
+  border: 1px solid rgba(239, 68, 68, .32) !important;
+  color: var(--fx-down) !important;
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  padding: 5px 12px !important;
+  min-height: 30px;
+  transition: all .15s;
+}
+
+#closeAllBtn:hover,
+.all-close-btn:hover {
+  background: rgba(239, 68, 68, .24) !important;
+}
+
+/* 持仓卡里的空态 */
+#positionsEmpty,
+.pos-empty {
+  color: var(--fx-text-3) !important;
+  font-size: 11.5px !important;
+  text-align: center;
+  padding: 18px 10px;
+  line-height: 1.7;
+}
+
+/* 日记卡：等宽、低对比、可滚动 */
+.log-card .log-list {
+  border-top: 1px solid var(--fx-line);
+  padding-top: 8px;
+}
+
+.log-card .log-item b,
+.log-card .log-row b {
+  color: var(--fx-text) !important;
+}
+
+/* 锁仓倒计时标记 */
+.lock-badge,
+.pos-lock {
+  font-size: 10px !important;
+  padding: 2px 7px !important;
+  border-radius: 999px !important;
+  background: var(--fx-gold-dim) !important;
+  color: var(--fx-gold) !important;
+  border: 1px solid rgba(224, 180, 76, .28) !important;
+  font-family: var(--fx-mono) !important;
+  white-space: nowrap;
+}
+
+/* 强平价 / 收益率等重要数值 */
+.pos-liq,
+.pos-rate,
+.pos-margin {
+  font-family: var(--fx-mono) !important;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px !important;
+  color: var(--fx-text-2) !important;
+}
+
+/* ===================================================================
+ * 浅色残留清扫
+ * -------------------------------------------------------------------
+ * 游戏的样式表里还有一批**硬编码浅色**（白底/米黄底），它们是按浅色主题
+ * 设计的。深色主题下这些会变成刺眼的白块 —— 截图里一眼就能看到
+ * （新手引导卡、三选一卡、页签、情报格子等）。
+ *
+ * 这一段逐一覆盖它们。凡是原来用 #fff / #fffaf1 / #f7f8fa 之类做底的，
+ * 统一换成深色表面；原来是浅色描边的，换成半透明中性描边。
+ * =================================================================== */
+
+/* --- 引导卡（新手起步指引）--- */
+.guide {
+  background: linear-gradient(180deg, var(--fx-surface-2), var(--fx-surface)) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  border-radius: var(--fx-r-md) !important;
+}
+
+.guide-head { color: var(--fx-accent) !important; }
+
+.guide-num {
+  background: var(--fx-accent) !important;
+  color: #041019 !important;
+}
+
+.guide-body { color: var(--fx-text-2) !important; }
+.guide-body b { color: var(--fx-text) !important; }
+
+/* 引导进度条：原来白底浅绿填充，深色下要反过来 */
+.guide-bar { background: rgba(148, 163, 184, .16) !important; }
+
+.guide-bar-fill {
+  background: linear-gradient(90deg, var(--fx-accent), var(--fx-purple)) !important;
+}
+
+.guide-progress { color: var(--fx-text-3) !important; }
+.guide-progress b { color: var(--fx-text-2) !important; }
+.guide-progress b.up { color: var(--fx-up) !important; }
+
+.guide-foot {
+  background: rgba(79, 140, 255, .08) !important;
+  border: 1px dashed rgba(79, 140, 255, .3) !important;
+  color: var(--fx-text-2) !important;
+}
+
+/* 引导卡里的快捷档位 chips */
+.guide-chip {
+  background: var(--fx-surface-3) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+}
+
+.guide-chip:hover {
+  border-color: rgba(79, 140, 255, .45) !important;
+  color: var(--fx-accent) !important;
+  background: var(--fx-accent-dim) !important;
+}
+
+.guide-chip i { color: var(--fx-text-3) !important; }
+
+.guide-chip em {
+  background: var(--fx-accent-dim) !important;
+  color: var(--fx-accent) !important;
+}
+
+/* --- 页签（模拟数据 / 挑战模式）--- */
+.tab {
+  background: transparent !important;
+  color: var(--fx-text-3) !important;
+  border: 0 !important;
+}
+
+.tab.active {
+  background: var(--fx-surface-3) !important;
+  color: var(--fx-text) !important;
+  box-shadow: inset 0 0 0 1px var(--fx-line-strong) !important;
+}
+
+.tab-bar, .tabs {
+  background: var(--fx-surface-2) !important;
+  border-radius: var(--fx-r-sm) !important;
+  padding: 3px !important;
+}
+
+/* --- 挑战/成长卡（原来是米黄底）--- */
+.challenge-card {
+  background: var(--fx-surface) !important;
+  border: 1px solid var(--fx-line) !important;
+}
+
+/* --- 杠杆档位按钮（原来是白底，warn 是米黄）--- */
+.lev-presets button {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+}
+
+.lev-presets button.warn {
+  background: var(--fx-gold-dim) !important;
+  border-color: rgba(224, 180, 76, .3) !important;
+  color: var(--fx-gold) !important;
+}
+
+/* --- 持仓操作按钮 --- */
+.pos-actions button {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+}
+
+.pos-actions button.close:disabled:hover {
+  background: var(--fx-surface-2) !important;
+  border-color: var(--fx-line) !important;
+  color: var(--fx-text-3) !important;
+}
+
+.pos-actions button.half {
+  background: var(--fx-gold-dim) !important;
+  border-color: rgba(224, 180, 76, .3) !important;
+  color: var(--fx-gold) !important;
+}
+
+/* --- 资产市场按钮 --- */
+.mk-btn {
+  background: var(--fx-surface-3) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  color: var(--fx-text) !important;
+  border-radius: var(--fx-r-sm) !important;
+}
+
+.mk-btn:hover {
+  border-color: rgba(79, 140, 255, .5) !important;
+  color: var(--fx-accent) !important;
+}
+
+/* --- 三选一卡牌（r1/r2/r3 稀有度底色）--- */
+.pick-card {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+}
+
+.pick-card.r1 { border-left: 3px solid var(--fx-text-3) !important; }
+.pick-card.r2 { border-left: 3px solid var(--fx-accent) !important; }
+.pick-card.r3 { border-left: 3px solid var(--fx-purple) !important; background: var(--fx-surface-2) !important; }
+
+.pick-card:hover {
+  border-color: rgba(79, 140, 255, .5) !important;
+  background: var(--fx-surface-3) !important;
+}
+
+/* --- 情报格子（原来是白底卡片）--- */
+.intel-repu-cell {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+}
+
+.intel-row, .intel-log-item {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(148, 163, 184, .08) !important;
+  color: var(--fx-text-2) !important;
+}
+
+/* --- 情报市场页签（原来是白底 active）--- */
+.im-tab {
+  background: transparent !important;
+}
+
+.im-tab.active {
+  background: transparent !important;
+  color: var(--fx-purple) !important;
+  border-bottom: 2px solid var(--fx-purple) !important;
+  box-shadow: none !important;
+}
+
+/* --- 图表悬停 OHLC 提示条（截图里那条白）--- */
+.chart-hover {
+  background: rgba(18, 25, 38, .96) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  color: var(--fx-text-2) !important;
+  border-radius: var(--fx-r-sm) !important;
+  font-family: var(--fx-mono) !important;
+  font-size: 10.5px !important;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .5) !important;
+}
+
+/* --- 衣柜卡（久爸）原来是暖白 --- */
+.dad-card {
+  background: linear-gradient(150deg, rgba(239, 68, 68, .1), transparent 45%), var(--fx-surface) !important;
+  border: 1px solid rgba(239, 68, 68, .28) !important;
+}
+
+/* --- 任何遗漏的浅色内联块：兜底 --- */
+.redeem-box, .dad-actions, .offer-actions, .retire-actions, .ruin-actions {
+  background: transparent !important;
+}
+
+/* 输入类控件在深色下的占位符 */
+input::placeholder, textarea::placeholder {
+  color: var(--fx-text-3) !important;
+  opacity: 1;
+}
+
+/* select 的下拉箭头在深色下需要反色 */
+select {
+  background-image: none !important;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* 数字输入框的上下箭头在深色下几乎看不见，隐藏并靠键盘/滑杆 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: .35;
+  height: 20px;
+}
+
+/* ============================ 下单区三项指标 ============================ */
+/* 游戏结构：.metrics > .metric > (.m-label + .m-val)
+ * 原来 .metric 是 #f7f9fa 浅灰底 —— 深色主题下会变成刺眼白块。
+ * 注意 .metrics 用的是裸 repeat(3, 1fr)，长数字会把格子撑破，
+ * 这里一并改成 minmax(0,1fr)。 */
+.metrics {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  margin: 14px 0 !important;
+}
+
+.metric {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-sm) !important;
+  padding: 9px 10px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.metric .m-label {
+  font-size: 10px !important;
+  color: var(--fx-text-3) !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.metric .m-val {
+  font-size: clamp(12px, 3.4vw, 14px) !important;
+  font-weight: 700 !important;
+  color: var(--fx-text) !important;
+  font-family: var(--fx-mono) !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* .m-label / .m-val 在弹窗里也会用到，统一收口 */
+.m-label { color: var(--fx-text-3) !important; }
+.m-val { color: var(--fx-text) !important; }
+
+/* ============================ 其余裸 1fr 网格的加固 ============================ */
+/* 游戏里凡是 repeat(n, 1fr) 的网格，长内容都可能撑破。
+ * 逐个指定为 minmax(0,1fr)，从根上防横向溢出。 */
+.loan-grid,
+.intel-repu,
+.metrics,
+.pair-row,
+.lev-presets {
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+/* 弹窗里的三格/四格信息区 */
+.cs-list, .market-list, .intel-list {
+  min-width: 0;
+}
+
+/* 保证金输入框那一行：MARGIN 标签 + 输入 + MAX 按钮 */
+.margin-row, .margin-line, .order-input-row {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  gap: 8px !important;
+  align-items: center;
+}
+
+/* 杠杆行：标题 + 数值 */
+.lev-head, .lev-row-head {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+/* 图上方的图表页签（模拟数据 / 挑战模式）深色化 */
+.chart-tabs, .mode-tabs {
+  background: var(--fx-surface-2) !important;
+  border-bottom: 1px solid var(--fx-line) !important;
+}
+
+/* 快讯条下方的"上一次"提示 */
+.market-foot-note, .last-trade {
+  color: var(--fx-text-3) !important;
+  font-size: 10.5px !important;
+}
+
+/* ============================ 移动端指标区 ============================
+ * 游戏自带 @media(max-width:560px) 会把 .metrics 改成两列、
+ * 第三个指标跨两列（grid-column: span 2）。
+ * 这个布局对手机是**合理**的 —— 三列在 390px 宽度下每个格子只有约 110px，
+ * 放不下 "$10,000.00" 这种数字。所以保留它，只做视觉统一。
+ */
+@media (max-width: 560px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+    margin: 12px 0 !important;
+  }
+
+  /* 第三个跨两列时，横排更舒展，标签与数值左右分布 */
+  .metric:last-child {
+    grid-column: span 2 !important;
+    flex-direction: row !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px !important;
+  }
+
+  .metric:last-child .m-label { flex: 0 1 auto; }
+  .metric:last-child .m-val { flex: 0 0 auto; }
+
+  .metric { padding: 8px 9px !important; }
+  .metric .m-label { font-size: 9.5px !important; }
+  .metric .m-val { font-size: 13px !important; }
+}
+
+/* ============================ 融资卡在手机上的密度 ============================
+ * 三格并排在 390px 下每格约 105px，装 "$50,000.00"（10 字符）已经很紧。
+ * 这里把内边距和字号再收一档，并允许数字用略小的等宽字体，
+ * 保证既不换行也不溢出。
+ */
+@media (max-width: 560px) {
+  .loan-cell {
+    padding: 8px 7px !important;
+  }
+
+  /* 标签最小 10px：再小在手机上就糊成一团、读不出来。
+   * 拥挤问题改用 letter-spacing 与省略号解决，不靠缩字号。 */
+  .loan-cell .m-label {
+    font-size: 10px !important;
+    letter-spacing: -.2px;
+  }
+
+  .loan-cell b {
+    font-size: 12px !important;
+    letter-spacing: -.2px;
+  }
+}
+
+@media (max-width: 380px) {
+  .loan-cell b { font-size: 11px !important; }
+  .loan-cell .m-label { font-size: 9.5px !important; }
+  .metric .m-val { font-size: 12px !important; }
+  .metric .m-label { font-size: 9px !important; }
+}
+
+/* ===================================================================
+ * 深色主题收口：用计算样式扫描找出的 12 个残留白块
+ * -------------------------------------------------------------------
+ * 这些是用 CDP 读真实计算样式扫出来的（不是靠猜），
+ * 每个都是深色界面里真实会露出来的白底：
+ *   .progress / .intel-hint / .input-wrap / kbd / .im-tabs
+ * =================================================================== */
+
+/* 情报提示条 */
+.intel-hint {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-sm) !important;
+  color: var(--fx-text-2) !important;
+  font-size: 11px !important;
+  line-height: 1.65;
+  padding: 9px 11px !important;
+}
+
+.intel-hint b { color: var(--fx-text) !important; }
+
+/* 通用进度条 */
+.progress {
+  background: rgba(148, 163, 184, .16) !important;
+  border-radius: 999px !important;
+  overflow: hidden;
+}
+
+.progress > *, .progress-fill {
+  background: linear-gradient(90deg, var(--fx-accent), var(--fx-purple)) !important;
+}
+
+/* 保证金输入框的包裹容器 */
+.input-wrap {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-sm) !important;
+  overflow: hidden;
+}
+
+.input-wrap:focus-within {
+  border-color: rgba(79, 140, 255, .55) !important;
+  box-shadow: 0 0 0 3px rgba(79, 140, 255, .14);
+}
+
+.input-wrap input {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* 快捷键提示 kbd：深色下要反色 */
+kbd {
+  background: var(--fx-surface-3) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  border-bottom-width: 2px !important;
+  border-radius: 4px !important;
+  color: var(--fx-text-2) !important;
+  font-family: var(--fx-mono) !important;
+  font-size: 10px !important;
+  padding: 1px 5px !important;
+  box-shadow: none !important;
+}
+
+/* 情报市场页签容器 */
+.im-tabs {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-sm) !important;
+  padding: 4px !important;
+  gap: 4px !important;
+  border-bottom: 1px solid var(--fx-line) !important;
+}
+
+.im-tab {
+  background: transparent !important;
+  border-radius: calc(var(--fx-r-sm) - 2px) !important;
+  border-bottom: 0 !important;
+}
+
+.im-tab.active {
+  background: var(--fx-purple-dim) !important;
+  color: var(--fx-purple) !important;
+  box-shadow: inset 0 0 0 1px rgba(157, 124, 255, .32) !important;
+  border-bottom: 0 !important;
+}
+
+/* 图表内快捷交易键的白色半透明底（深色下偏亮，压暗一点） */
+.ct-btn {
+  background: rgba(24, 34, 52, .92) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  color: var(--fx-text) !important;
+  border-radius: 7px !important;
+}
+
+.ct-btn.ct-pause {
+  color: var(--fx-gold) !important;
+  border-color: rgba(224, 180, 76, .35) !important;
+}
+
+.ct-btn.ct-long {
+  background: var(--fx-up) !important;
+  border-color: var(--fx-up) !important;
+  color: #04170c !important;
+  font-weight: 700;
+}
+
+.ct-btn.ct-short {
+  background: var(--fx-down) !important;
+  border-color: var(--fx-down) !important;
+  color: #1a0505 !important;
+  font-weight: 700;
+}
+
+.ct-btn.ct-close {
+  background: rgba(148, 163, 184, .18) !important;
+  color: var(--fx-text-2) !important;
+}
+
+/* 教程里的说明块 */
+.tutorial-list, .tutorial-item {
+  color: var(--fx-text-2) !important;
+}
+
+.tutorial-item b { color: var(--fx-text) !important; }
+
+/* 文档里所有 var(--line) 描边在深色下会偏亮，统一调暗 */
+.ghost-btn, .btn-ghost, .im-buy-btn, .mk-btn {
+  border-color: var(--fx-line) !important;
+}
+
+/* ============================ 情报条目操作栏布局 ============================
+ * 原结构：.im-lv-actions 里是 [select] [button] [note?]
+ * 在窄屏上 select 和 button 很容易各占一行，看起来散乱。
+ * 这里改成 grid：select 自适应宽度、按钮靠右、note 独占下一行。
+ */
+.im-lv-actions {
+  display: grid !important;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) !important;
+  align-items: center;
+  gap: 8px !important;
+  margin-top: 2px;
+}
+
+/* 下拉框固定在左，宽度随内容 */
+.im-lv-actions select {
+  grid-column: 1;
+  justify-self: start;
+  max-width: 100%;
+  width: auto;
+}
+
+/* 买入按钮靠右，占满剩余宽度（手机上更好点） */
+.im-lv-actions .im-buy-btn {
+  grid-column: 2;
+  justify-self: end;
+  margin-left: 0 !important;
+  width: auto;
+  min-width: 96px;
+}
+
+/* 只有一个按钮（放情报面板会有两个）时，第二个按钮折到下一行 */
+.im-lv-actions .im-buy-btn + .im-buy-btn {
+  grid-column: 2;
+  margin-top: 6px;
+}
+
+/* 备注文字独占整行 */
+.im-lv-actions .im-note {
+  grid-column: 1 / -1;
+  justify-self: end;
+  margin-top: 2px;
+}
+
+/* 放情报面板：两个方向按钮并排 */
+.im-lv-actions .im-buy-btn[data-dir="1"],
+.im-lv-actions .im-buy-btn[data-dir="-1"] {
+  grid-column: auto;
+  justify-self: stretch;
+  min-width: 0;
+}
+
+/* 手机端：按钮占满整行更易点 */
+@media (max-width: 560px) {
+  .im-lv-actions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 7px !important;
+  }
+
+  .im-lv-actions select {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    width: 100%;
+    max-width: none;
+  }
+
+  .im-lv-actions .im-buy-btn {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    width: 100%;
+    min-height: 40px;
+  }
+}
+
+/* ============================ 资产市场残留白块 ============================ */
+/* 用计算样式扫描找出来的：分类标题条与稀有度徽章仍是浅底 */
+.market-cat {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-sm) !important;
+  color: var(--fx-text-2) !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  padding: 7px 11px !important;
+  margin: 10px 0 7px !important;
+}
+
+/* 稀有度徽章：保值/平衡/投机 三种色调 */
+.market-tier {
+  font-size: 9.5px !important;
+  font-weight: 700 !important;
+  padding: 2px 7px !important;
+  border-radius: 999px !important;
+  white-space: nowrap;
+}
+
+.market-tier.t-hold {
+  background: rgba(79, 140, 255, .14) !important;
+  color: var(--fx-accent) !important;
+  border: 1px solid rgba(79, 140, 255, .3) !important;
+}
+
+.market-tier.t-mix {
+  background: var(--fx-gold-dim) !important;
+  color: var(--fx-gold) !important;
+  border: 1px solid rgba(224, 180, 76, .3) !important;
+}
+
+.market-tier.t-spec {
+  background: var(--fx-down-dim) !important;
+  color: var(--fx-down) !important;
+  border: 1px solid rgba(239, 68, 68, .3) !important;
+}
+
+/* 资产条目里的现价/涨跌 */
+.asset-row-price, .mk-price {
+  font-family: var(--fx-mono) !important;
+  font-variant-numeric: tabular-nums;
+  color: var(--fx-text) !important;
+}
+
+.asset-row-chg, .mk-chg {
+  font-family: var(--fx-mono) !important;
+  font-size: 10.5px !important;
+}
+
+.asset-row-chg.up, .mk-chg.up { color: var(--fx-up) !important; }
+.asset-row-chg.down, .mk-chg.down { color: var(--fx-down) !important; }
+
+/* 资产卡里的一键买入/卖出按钮 */
+.asset-actions button, .mk-actions button {
+  min-height: 34px;
+  border-radius: var(--fx-r-sm) !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+}
+
+/* 要约弹窗（有人接手/折价捡漏）的强调条 */
+.offer-head, .offer-title {
+  color: var(--fx-gold) !important;
+  font-weight: 700 !important;
+}
+
+/* 幽灵对战 HUD 与飘字（GhostUI 生成的，也统一到同一套令牌） */
+.fxg-hud {
+  background: rgba(18, 25, 38, .96) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  color: var(--fx-text) !important;
+  border-radius: var(--fx-r-md) !important;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .5) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.fxg-hud .fxg-t { color: var(--fx-text-3) !important; }
+.fxg-hud .fxg-l span:first-child { color: var(--fx-text-2) !important; }
+.fxg-hud .fxg-d { border-top-color: var(--fx-line) !important; }
+
+.fxg-float {
+  background: rgba(18, 25, 38, .96) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  color: var(--fx-text) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .55) !important;
+}
+
+.fxg-float.p1 {
+  background: rgba(34, 197, 94, .92) !important;
+  border-color: rgba(34, 197, 94, .5) !important;
+  color: #04170c !important;
+  font-weight: 600;
+}
+
+.fxg-float.p0 {
+  background: rgba(239, 68, 68, .92) !important;
+  border-color: rgba(239, 68, 68, .5) !important;
+  color: #fff !important;
+  font-weight: 600;
+}
+
+/* 幽灵弹窗 */
+.fxg-panel {
+  background: var(--fx-surface) !important;
+  border: 1px solid var(--fx-line-strong) !important;
+  color: var(--fx-text) !important;
+}
+
+.fxg-head { border-bottom-color: var(--fx-line) !important; }
+.fxg-head h2 { color: var(--fx-text) !important; }
+
+.fxg-x {
+  background: var(--fx-surface-2) !important;
+  border-color: var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+}
+
+.fxg-btn {
+  background: linear-gradient(180deg, #5b95ff, var(--fx-accent)) !important;
+  color: #fff !important;
+  min-height: 46px;
+  border-radius: var(--fx-r-md) !important;
+}
+
+.fxg-btn.gold {
+  background: linear-gradient(180deg, #e8c163, var(--fx-gold)) !important;
+  color: #241a00 !important;
+}
+
+.fxg-btn.ghost {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  color: var(--fx-text-2) !important;
+}
+
+.fxg-row {
+  color: var(--fx-text-2) !important;
+  border-bottom: 1px solid rgba(148, 163, 184, .07);
+}
+
+.fxg-row b { color: var(--fx-text) !important; }
+
+.fxg-note { color: var(--fx-text-3) !important; }
+.fxg-win { color: var(--fx-up) !important; }
+.fxg-lose { color: var(--fx-down) !important; }
+
+/* ===================================================================
+ * 弹窗内部残留白块（用 tools/probe-modals.js 扫出来的最后 2 处）
+ * -------------------------------------------------------------------
+ * 这两个类在深层弹窗里，平时不打开看不见，一开就是一块白：
+ *   .offer-perk  资产要约里的加成说明（原 #eef7f1 淡绿）
+ *   .cs-box      结算单里的信息盒（原 #f6fbf8 淡绿）
+ * =================================================================== */
+
+.offer-perk {
+  background: rgba(34, 197, 94, .09) !important;
+  border: 1px solid rgba(34, 197, 94, .24) !important;
+  border-left: 3px solid var(--fx-up) !important;
+  border-radius: var(--fx-r-sm) !important;
+  color: var(--fx-text-2) !important;
+  font-size: 11.5px !important;
+  line-height: 1.7;
+  padding: 9px 11px !important;
+  margin: 12px 0 !important;
+}
+
+.offer-perk b { color: var(--fx-up) !important; }
+
+.cs-box {
+  background: var(--fx-surface-2) !important;
+  border: 1px solid var(--fx-line) !important;
+  border-radius: var(--fx-r-sm) !important;
+  padding: 11px 13px !important;
+  margin-bottom: 13px !important;
+  color: var(--fx-text-2) !important;
+}
+
+.cs-box b { color: var(--fx-text) !important; }
+
+/* 要约弹窗的两个按钮并排 */
+.offer-actions {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 9px !important;
+}
+
+.offer-actions button {
+  min-height: 46px;
+  border-radius: var(--fx-r-sm) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+
+/* ===================================================================
+ * 市场习惯切换：涨跌配色的两种惯例
+ * -------------------------------------------------------------------
+ * 默认「红涨绿跌」（东亚：中国大陆 / 日本 / 韩国 / 台湾）。
+ * 想切「绿涨红跌」（欧美：TradingView / Yahoo Finance）：
+ *
+ *   ① 纯 CSS 方式：给 <html> 加 data-market="intl"
+ *   ② 运行时：FXCanvasTheme.setPalette('intl')
+ *             并同时把头两个变量改成绿/红
+ *
+ * Canvas 的 K 线颜色由 theme-canvas.js 按同一个 data-market 属性切换，
+ * 保证"界面与图表"永远一致 —— 不会出现红涨界面配绿涨 K 线。
+ * =================================================================== */
+
+html[data-market="intl"] {
+  --fx-up: #22c55e;                          /* 涨 = 绿 */
+  --fx-up-dim: rgba(34, 197, 94, .14);
+  --fx-down: #ef4444;                        /* 跌 = 红 */
+  --fx-down-dim: rgba(239, 68, 68, .14);
+}
+
+/* 做多/做空主按钮也跟随涨跌语义（东亚：做多=红） */
+html[data-market="intl"] .btn-long,
+html[data-market="intl"] #longBtn {
+  background: linear-gradient(180deg, #2ee06a, #16a34a) !important;
+  color: #03160a !important;
+  box-shadow: 0 4px 18px rgba(34, 197, 94, .3) !important;
+}
+
+html[data-market="intl"] .btn-short,
+html[data-market="intl"] #shortBtn {
+  background: linear-gradient(180deg, #ff5f5f, #dc2626) !important;
+  color: #1a0404 !important;
+  box-shadow: 0 4px 18px rgba(239, 68, 68, .3) !important;
+}
+
+/* ===================================================================
+ * 极窄屏（≤340px，老款 iPhone SE / 小屏安卓）收口
+ * -------------------------------------------------------------------
+ * 320px 实测发现两个问题：
+ *   ① 杠杆快捷档位 8 个按钮换行，888x 单独掉到第二行，很难看
+ *   ② 融资卡三格数字挤到几乎贴边
+ * =================================================================== */
+@media (max-width: 340px) {
+  /* 杠杆档位：4 列 × 2 行，正好铺满且对齐 */
+  .lev-presets, #levPresets {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 5px !important;
+  }
+
+  .lev-presets button, #levPresets button {
+    font-size: 10px !important;
+    padding: 6px 2px !important;
+    min-height: 30px;
+    min-width: 0;
+  }
+
+  /* 融资三格：再压一档内边距，数字用更紧的字距 */
+  .loan-cell {
+    padding: 7px 5px !important;
+  }
+
+  .loan-cell .m-label {
+    font-size: 9.5px !important;
+    letter-spacing: -.3px;
+  }
+
+  .loan-cell b {
+    font-size: 11.5px !important;
+    letter-spacing: -.4px;
+  }
+
+  /* 账户卡右侧数字也收一档 */
+  #balance { font-size: 13px !important; }
+
+  /* 图表内的快捷按钮：四个挤一行，压字号 */
+  .chart-quick button, .ct-btn {
+    font-size: 11px !important;
+    padding: 6px 8px !important;
+    min-height: 34px;
+  }
+
+  /* 顶栏按钮再收 */
+  .ghost-btn, .fxo-chip, .fxg-chip {
+    font-size: 10px !important;
+    padding: 5px 8px !important;
+    min-height: 30px;
+  }
+
+  /* 情报四格在极窄屏保持两列但更紧凑 */
+  .intel-repu-cell { padding: 7px 5px !important; }
+  .intel-repu-cell b { font-size: 11.5px !important; }
+  .intel-repu-cell .m-label { font-size: 9px !important; }
+
+  /* 幽灵 HUD 缩小，别挡住行情 */
+  .fxg-hud {
+    font-size: 10px !important;
+    padding: 7px 9px !important;
+    min-width: 108px;
+  }
+
+  /* 指标区字号 */
+  .metric .m-val { font-size: 11.5px !important; }
+  .metric .m-label { font-size: 9px !important; }
+}
+
+/* ===================================================================
+ * 桌面端布局：双栏工作台（CSS Multi-column）
+ * -------------------------------------------------------------------
+ * 目标：宽屏不再是一根 780px 的窄长条，改成两栏填满视野。
+ *
+ * 实测得到的最终布局（tools/probe-layout.js 测量）：
+ *
+ *   左列（信息面板）                右列（主工作区）
+ *   ┌──────────────────────┐    ┌──────────────────────┐
+ *   │ 账户总权益            │    │ 行情头 + K 线 + 快讯   │
+ *   ├──────────────────────┤    ├──────────────────────┤
+ *   │ 智萌子融资            │    │ 下单台                │
+ *   ├──────────────────────┤    ├──────────────────────┤
+ *   │ 本局成长              │    │ 持仓                  │
+ *   ├──────────────────────┤    ├──────────────────────┤
+ *   │ 久留美的家当          │    │ 交易日记               │
+ *   ├──────────────────────┤    └──────────────────────┘
+ *   │ 情报市场              │
+ *   └──────────────────────┘
+ *
+ * 为什么左信息、右操作：
+ *   中文阅读从左上开始 —— 先看到"你拥有什么"（资产全貌），
+ *   再进入"你要做什么"（看图下单），符合认知顺序，也符合
+ *   大多数交易平台的习惯（左侧持仓/资讯，右侧图表）。
+ *
+ * ===================================================================
+ * 为什么最终用 CSS Multi-column，而不是 CSS Grid
+ * -------------------------------------------------------------------
+ * 我试了三种方案，只有第三种能用，记录在此避免重走：
+ *
+ * ① 【固定列宽 Grid】grid-template-columns: 760px 1fr
+ *    → 容器宽度减去 padding 后小于 760+间隙，列溢出，整页错位。
+ *
+ * ② 【按行交错 Grid】左栏 grid-row 2/4/6/8、右栏 3/5/7
+ *    → 网格每行高度 = 该行所有单元格的最大高度。左栏"行情图"很高、
+ *      右栏"账户卡"很矮 → 该行被拉高，账户卡下方出现 200px+ 空洞；
+ *      反过来右栏"情报卡"很高时又把左栏撑开。
+ *      **两栏内容高度天然不同，共用行必然互相拉扯。**
+ *    → 实测出现大片空白与文字重叠（见 README-UI 的问题记录）。
+ *
+ * ③ 【Multi-column】column-count: 2  ✅ 采用
+ *    → 唯一能在"不增加 DOM 包裹层"的前提下让两栏**各自独立流动**的办法。
+ *      每张卡片 break-inside: avoid 后成为不可分割整体，
+ *      浏览器按 DOM 顺序依次填列，行高互不影响。
+ *
+ *    代价：**无法精确控制哪张卡在哪一列**（Multi-column 不认 order，
+ *          break-before 在 balance 模式下也不可靠，实测无效）。
+ *          但这反而带来一个好处 —— 自适应：窗口变窄时内容自动重新分配。
+ *
+ * =================================================================== */
+
+@media (min-width: 1180px) {
+  .phone {
+    max-width: 1280px !important;
+    column-count: 2 !important;
+    column-gap: 20px !important;
+    /* balance 让两列高度尽量接近；auto 需要容器定高，我们做不到 */
+    column-fill: balance !important;
+    padding: 16px 22px 36px !important;
+  }
+
+  /* 顶栏横跨两列 */
+  .phone > .topbar {
+    column-span: all !important;
+    margin-bottom: 14px !important;
+    padding-bottom: 14px !important;
+  }
+
+  /* 每张卡片是不可分割的整体，不会被从中间截断。
+   * display:inline-block 是 Multi-column 正确排版的必要条件。
+   *
+   * ⚠️ 但这里**绝不能**写成无条件的 display:inline-block !important ——
+   *   游戏用 `[hidden] { display: none !important }` 控制卡片显隐，
+   *   而我们的 !important 优先级更高（同层 !important 时后出现的胜出），
+   *   会把所有隐藏卡片强行显示出来。
+   *   实测后果：衣柜摸金、挑战模式进度这两张本不该出现的卡一直挂在页面上。
+   *
+   *   正确写法：用 :not([hidden]) 排除隐藏元素，
+   *   这样 [hidden] 的 display:none 依然生效。 */
+  .phone > .card:not([hidden]) {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+    display: inline-block !important;
+    vertical-align: top;
+    width: 100% !important;
+    min-width: 0;
+    margin: 0 0 14px !important;
+  }
+
+  /* 隐藏的卡片必须彻底移除，不占据任何空间 */
+  .phone > .card[hidden] {
+    display: none !important;
+  }
+
+  /* ---------- 桌面端密度优化 ---------- */
+
+  /* 图表加高：宽屏下 290px 太扁，K 线细节看不清 */
+  .chart-wrap { height: 380px !important; }
+
+  /* 账户卡右侧四项排两列，省竖向空间 */
+  .acc-right {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 14px;
+    text-align: left;
+  }
+  .acc-right .acc-label,
+  .acc-right .acc-balance { grid-column: 1 / -1; }
+
+  /* 主操作按钮加大 */
+  .btn-long, .btn-short, #longBtn, #shortBtn {
+    min-height: 56px !important;
+    font-size: 16px !important;
+  }
+
+  /* 面板内边距略收，一屏能多看两张卡 */
+  .phone > .account-card,
+  .phone > .loan-card,
+  .phone > .growth-card,
+  .phone > .asset-card,
+  .phone > .intel-card { padding: 14px 16px !important; }
+
+  /* 日记稍高 */
+  .log-card .log-list { max-height: 240px; }
+
+  /* 台账数字略放大（宽屏有空间） */
+  #equity { font-size: 36px !important; }
+  .market-price { font-size: 26px !important; }
+}
+
+/* 超宽屏：容器再放宽，图表更高 */
+@media (min-width: 1560px) {
+  .phone {
+    max-width: 1480px !important;
+    column-gap: 24px !important;
+  }
+  .chart-wrap { height: 440px !important; }
+  .log-card .log-list { max-height: 300px; }
+  #equity { font-size: 40px !important; }
+}
+
+/* 中等桌面（1180~1360）：两列偏窄，图表降低一点以免太挤 */
+@media (min-width: 1180px) and (max-width: 1360px) {
+  .chart-wrap { height: 330px !important; }
+  .phone { max-width: 1200px !important; }
+}
+
+/* ===================================================================
+ * 修复：三选一卡牌标题看不清（深黑字 + 深背景）
+ * -------------------------------------------------------------------
+ * 根因：.pick-name 没有设定 color，继承游戏根变量的 --text: #1b2028。
+ *       我把 modal-panel 改成深色背景（#121926）后，深黑字压在深底上
+ *       几乎看不见 —— 对比度不足 2:1。
+ *       我的主题之前只覆盖了 .pick-card 的底色，漏了标题颜色。
+ * =================================================================== */
+
+.pick-name {
+  color: var(--fx-text) !important;      /* 亮色正文，对比度 16:1 */
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  margin-bottom: 4px !important;
+  letter-spacing: .2px;
+}
+
+/* 卡牌描述用次级文字色，保持层次 */
+.pick-desc {
+  color: var(--fx-text-2) !important;
+  font-size: 11.5px !important;
+  line-height: 1.65 !important;
+  margin-bottom: 6px !important;
+}
+
+/* 卡牌里的稀有度标签/数值若有深色，一并校正 */
+.pick-card b,
+.pick-card strong {
+  color: var(--fx-text) !important;
+}
+
+/* 跳过按钮也要在深色下可读 */
+.pick-skip {
+  color: var(--fx-text-3) !important;
+  border-color: var(--fx-line-strong) !important;
+}
+
+.pick-skip:hover {
+  color: var(--fx-text-2) !important;
+  border-color: var(--fx-text-3) !important;
+}
+
+/* 稀有度左边条（r1/r2/r3）在深色下提高辨识度 */
+.pick-card {
+  border-left-width: 4px !important;
+}
+
+/* ===================================================================
+ * 修复：暂停后亮黄色过于抢眼
+ * -------------------------------------------------------------------
+ * 原样式有三处高饱和黄：
+ *   .ct-pause.paused      background: #e8b455（纯黄块 + 黄色光晕）
+ *   .chart-wrap.is-paused box-shadow: 2px 黄框
+ *   .chart-note .right.paused  color: #b8862f
+ *
+ * 问题：暂停是**常态操作**（拿到情报就得暂停慢慢想），
+ *       一个刺眼的黄色按钮 + 描边会持续吸引注意力，压过真正重要的
+ *       价格与持仓。视觉上应该"低调地说明状态"，而不是"喊"。
+ *
+ * 改法：把"填充式亮黄"换成"低饱和的琥珀色描边 + 微弱提示"。
+ *       保留色彩语义（黄=暂停），但把强度降下来。
+ * =================================================================== */
+
+/* 暂停按钮：从实心黄块 → 深底 + 琥珀色文字与细边 */
+.ct-pause.paused {
+  background: rgba(224, 180, 76, .16) !important;
+  color: var(--fx-gold) !important;
+  border: 1px solid rgba(224, 180, 76, .45) !important;
+  box-shadow: none !important;
+  font-weight: 700 !important;
+}
+
+.ct-pause.paused:hover {
+  background: rgba(224, 180, 76, .26) !important;
+}
+
+/* 图表暂停描边：从 2px 亮黄实框 → 1px 半透明内侧细线 */
+.chart-wrap.is-paused {
+  box-shadow: inset 0 0 0 1px rgba(224, 180, 76, .35),
+              inset 0 0 60px rgba(0, 0, 0, .45) !important;
+}
+
+/* 行情卡外框同色，避免两张卡描边不一致 */
+.market-card.is-paused {
+  box-shadow: none !important;
+  border-color: rgba(224, 180, 76, .3) !important;
+}
+
+/* 底部提示"已暂停"：从深黄 #b8862f → 柔和琥珀 */
+.chart-note .right.paused {
+  color: var(--fx-gold) !important;
+  font-weight: 600 !important;
+}
+
+/* 图表顶部"行情已暂停"角标：同样降饱和 */
+.pause-badge {
+  background: rgba(224, 180, 76, .14) !important;
+  border: 1px solid rgba(224, 180, 76, .32) !important;
+  color: var(--fx-gold) !important;
+  font-weight: 600 !important;
+}

@@ -1,0 +1,24 @@
+# Render 部署配置（Blueprint 规范）
+# 用法：把仓库连到 Render，选中本文件即自动创建服务。
+#
+# ★ 两个必须注意的点：
+#   1) plan: free 是免费档。免费实例会在闲置后休眠，
+#      下次访问会有几十秒冷启动（排行榜数据不会丢，因为有磁盘挂载）。
+#   2) disk 必须配。没有它，每次重新部署都会清空排行榜！
+services:
+  - type: web
+    name: fx-online
+    runtime: node
+    plan: free
+    buildCommand: node tools/build-online.js
+    startCommand: node src/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # FX_HOST 不用设：server.js 默认已经监听 0.0.0.0
+      # PORT 也不用设：Render 会自动注入，server.js 会优先读它
+    disk:
+      name: fx-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
