@@ -45,6 +45,36 @@ git push -u origin main
 
 ---
 
+## 一之二、两种玩法：联机版 与 单机版
+
+同一份游戏源码，产出两个文件，用途不同：
+
+| | 联网版 `public/index.html` | 单机版 `dist-ghost/index.html` |
+| --- | --- | --- |
+| 怎么打开 | 跑起服务端后访问地址 | **双击文件**，或发给任何人 |
+| 需要服务器 | 是 | **完全不需要** |
+| 联机排行榜 | ✅ 全球玩家同榜 | ⛔ 只有本机榜（localStorage） |
+| 云端存档 | ✅ 换设备/清缓存都不丢 | ⛔ 存在浏览器本地 |
+| 幽灵对战 | ✅ | ✅ |
+| 追加保证金 | ✅ | ✅ |
+| 新 UI 主题 | ✅ | ✅ |
+| 网络请求 | 访问 `/api/*` | **零**（实测断网可用） |
+
+单机版的定位：**网络不好或懒得开服务时的兜底**。核心玩法（交易、追保、幽灵对战）
+全部可用，只是没有"和别人比"的部分。
+
+```bash
+node tools/build-online.js      # 联网版 → public/index.html
+node tools/build-standalone.js  # 单机版 → dist-ghost/index.html
+node tools/probe-offline.js     # 断网验收：确认单机版真的零网络
+```
+
+> 单机版构建时会**强制检查**：一旦产物里出现 `window.FXOnline` 或任何 `http(s)://`
+> 外链，构建直接失败。因为那意味着"离线打开会一直重试、控制台刷满错误"——
+> 这类问题只有真断网测才会暴露，所以用构建期断言拦死。
+
+---
+
 ## 二、它做了什么
 
 ### 排行榜
@@ -204,15 +234,19 @@ fx-online/
 │
 ├── tools/
 │   ├── build-online.js    ★ 合并构建：主题 + 幽灵 + 追保 + 云存档 → public/index.html
-│   ├── build-ghost.js     离线单文件版（按需生成到 dist-ghost/，不进仓库）
+│   ├── build-standalone.js ★ 单机版构建：单文件、零网络、双击即玩（强制校验无外链）
 │   ├── game-src.js        游戏本体路径解析（全项目唯一一处候选列表）
 │   ├── inject-guard.js    幂等注入：本体已合并过时先剥离再注入
 │   ├── acceptance.js      ★ 端到端验收：起真服务端 + 真浏览器跑完整流程
+│   ├── probe-offline.js   ★ 断网验收：CDP 掐断网络，证明单机版确实零依赖
 │   ├── probe-*.js         浏览器探针（追保 / 线上体检 / 弹窗几何等）
 │   └── shot*.js           截图 / 样式探针（CDP）
 │
 ├── public/
-│   └── index.html         预构建页面（随仓库提交，构建失败时也能托管）
+│   └── index.html         联网版产物（随仓库提交，构建失败时也能托管）
+│
+├── dist-ghost/
+│   └── index.html         单机版产物（单文件 / 零网络 / 双击即玩，给玩家的交付物）
 │
 ├── test/
 │   ├── store-close.js     退出落盘语义（无改动不写盘）

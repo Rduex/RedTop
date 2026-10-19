@@ -7,14 +7,18 @@ data/
 *.bak
 node_modules/
 
-# 可重建的离线单文件产物：不进仓库（需要时 node tools/build-ghost.js 现场生成）
-dist-ghost/
-
 # 探针抓取的线上页面副本
 .live-tmp.html
 
-# 说明：public/index.html 是构建产物，但这里**有意不忽略**它。
-# 原因：云平台（Railway/Render）部署时如果构建步骤没跑起来（或平台不支持
-# 自定义构建命令），服务端仍然需要一个现成的 index.html 才能托管页面 ——
-# 把它一起提交，等于给部署留了一条"即便构建失败也能跑"的退路。
-# 重新构建： node tools/build-online.js
+# 说明：下面两个产物**有意入库**，理由不同 ——
+#
+#  public/index.html        联网版。云平台（Railway/Render）万一构建步骤没跑起来，
+#                           服务端仍需要一个现成的 index.html 才能托管页面 ——
+#                           把它一起提交，等于给部署留了一条"即便构建失败也能跑"的退路。
+#
+#  dist-ghost/index.html    单机版。它本身就是**给玩家的交付物**：
+#                           一个文件、零网络、双击即玩，可以发链接直接下载。
+#                           所以它必须能被 git 直接访问，不能只放在本机。
+#
+# 重新构建： node tools/build-online.js     （联网版）
+#            node tools/build-standalone.js （单机版）
