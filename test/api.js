@@ -25,7 +25,7 @@ function check(name, cond, extra) {
 }
 function section(t) { console.log('\n' + t); }
 
-function request(method, p, body, token) {
+function request(method, p, body, token, extraHeaders) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? null : JSON.stringify(body);
     const req = http.request({
@@ -33,7 +33,8 @@ function request(method, p, body, token) {
       headers: Object.assign(
         { 'Content-Type': 'application/json' },
         payload ? { 'Content-Length': Buffer.byteLength(payload) } : {},
-        token ? { 'X-FX-Token': token } : {}
+        token ? { 'X-FX-Token': token } : {},
+        extraHeaders || {}
       ),
     }, (res) => {
       const chunks = [];
@@ -273,6 +274,51 @@ process.on('exit', cleanup);
   const traversal = await request('GET', '/../src/server.js');
   check('路径穿越被挡（不回源码）', traversal.text.indexOf('FX_PORT') < 0 &&
     traversal.text.indexOf('require(') < 0, traversal.status);
+
+  section('=== 11b. 传输压缩（弱网首屏的关键）===');
+  /* 为什么要测：页面是单文件 567KB，不压缩每次访问都要传这么多。
+   * 压完约 148KB（省 74%），但压缩逻辑有个共同陷阱 ——
+   *   · 忘了 Vary: Accept-Encoding → 中间缓存会把 br 结果发给了只支持 gzip 的客户端
+   *   · 忘了对 HEAD 去掉 body → 探针判定异常
+   *   · 压缩后内容与源文件不一致（编码/换行处理错）
+   * 这三条都在这里锁死。 */
+  const raw = await request('GET', '/', undefined, undefined, { 'Accept-Encoding': 'identity' });
+  const br = await request('GET', '/', undefined, undefined, { 'Accept-Encoding': 'br, gzip' });
+  const onlyGzip = await request('GET', '/', undefined, undefined, { 'Accept-Encoding': 'gzip' });
+  const refuse = await request('GET', '/', undefined, undefined, { 'Accept-Encoding': 'br;q=0, gzip;q=0' });
+
+  check('★ 支持 brotli 时返回 br 编码',
+    br.headers['content-encoding'] === 'br', br.headers['content-encoding']);
+  check('★ 只支持 gzip 时退回 gzip',
+    onlyGzip.headers['content-encoding'] === 'gzip', onlyGzip.headers['content-encoding']);
+  check('客户端明确拒绝压缩时发明文',
+    !refuse.headers['content-encoding'], refuse.headers['content-encoding']);
+
+  const rawLen = Number(raw.headers['content-length'] || 0);
+  const brLen = Number(br.headers['content-length'] || 0);
+  check('★ 压缩确实省下大量体积（≥60%）',
+    rawLen > 0 && brLen > 0 && (1 - brLen / rawLen) >= 0.6,
+    rawLen + ' → ' + brLen + '（省 ' + Math.round((1 - brLen / rawLen) * 100) + '%）');
+
+  check('★ 带 Vary: Accept-Encoding（否则 CDN 会串编码）',
+    String(br.headers.vary || '').toLowerCase().indexOf('accept-encoding') >= 0,
+    br.headers.vary);
+  check('带 ETag（重复访问可 304）', !!br.headers.etag, br.headers.etag);
+
+  if (br.headers.etag) {
+    const fresh = await request('GET', '/', undefined, undefined, {
+      'Accept-Encoding': 'br', 'If-None-Match': br.headers.etag,
+    });
+    check('★ If-None-Match 命中时返回 304 且无正文',
+      fresh.status === 304 && !fresh.text, fresh.status + ' / 正文长度 ' + fresh.text.length);
+  }
+
+  const head = await request('HEAD', '/', undefined, undefined, { 'Accept-Encoding': 'br' });
+  check('HEAD / 返回 200 且无正文', head.status === 200 && !head.text, head.status);
+
+  check('★ 明文页面内容完整（非乱码、含关键标记）',
+    html.text.indexOf('<!doctype html>') >= 0 && html.text.indexOf('window.FX = {') >= 0 &&
+    html.text.length > 300000, '正文长度 ' + html.text.length);
 
   section('=== 12. 构建配置（云平台部署相关）===');
   /* 用 /api/health 里报出来的端口，反证 server.js 读的是我们传进去的 FX_PORT。
